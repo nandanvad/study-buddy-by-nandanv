@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Study Buddy</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f4f4f4;
+      color: #222;
+      transition: background-color 0.3s, color 0.3s;
+    }
+    .dark {
+      background-color: #1e1e1e;
+      color: #ddd;
+    }
+    header {
+      padding: 1rem;
+      background: #4CAF50;
+      color: white;
+      text-align: center;
+    }
+    .container {
+      padding: 20px;
+      max-width: 800px;
+      margin: auto;
+    }
+    textarea, input[type="text"] {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 10px 0;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    .chat-box {
+      margin-top: 30px;
+      max-height: 400px;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      padding: 10px;
+      background: #fff;
+    }
+    .dark .chat-box {
+      background: #2b2b2b;
+      border-color: #555;
+    }
+    .msg {
+      display: flex;
+      margin-bottom: 10px;
+    }
+    .msg.user {
+      justify-content: flex-end;
+    }
+    .msg.assistant {
+      justify-content: flex-start;
+    }
+    .bubble {
+      padding: 10px;
+      border-radius: 10px;
+      max-width: 70%;
+      word-wrap: break-word;
+    }
+    .user .bubble {
+      background: #dcf8c6;
+    }
+    .assistant .bubble {
+      background: #eee;
+    }
+    .dark .user .bubble {
+      background: #375b3f;
+      color: white;
+    }
+    .dark .assistant .bubble {
+      background: #444;
+      color: white;
+    }
+    .avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      margin: 0 10px;
+    }
+    .left .avatar {
+      order: -1;
+    }
+    .toggle-theme {
+      float: right;
+      background: transparent;
+      color: white;
+      border: 1px solid white;
+      margin-top: -40px;
+    }
+    #summaryOutput {
+      white-space: pre-wrap;
+      border: 1px solid #ccc;
+      padding: 10px;
+      margin-top: 20px;
+      border-radius: 5px;
+      background: #fafafa;
+    }
+    .dark #summaryOutput {
+      background: #333;
+      border-color: #666;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    Study Buddy 📚
+    <button class="toggle-theme" onclick="toggleTheme()">🌗</button>
+  </header>
+
+  <div class="container">
+    <h3>Upload PDF or enter text:</h3>
+    <input type="file" id="pdfInput" accept=".pdf"><br>
+    <textarea id="textInput" rows="6" placeholder="Or paste some text here..."></textarea><br>
+    <button onclick="summarize()">Summarize & Generate Questions</button>
+
+    <div id="summaryOutput"></div>
+
+    <div class="chat-box" id="chatBox"></div>
+    <input type="text" id="userInput" placeholder="Ask your study buddy...">
+    <button onclick="sendMessage()">Send</button>
+  </div>
+
+  <script>
+    let chatHistory = [];
+
+    function toggleTheme() {
+      document.body.classList.toggle('dark');
+    }
+
+    function showMessage(content, role) {
+      const chatBox = document.getElementById("chatBox");
+      const msgDiv = document.createElement("div");
+      msgDiv.className = `msg ${role}`;
+
+      const avatar = document.createElement("img");
+      avatar.className = "avatar";
+      avatar.src = role === "user" ? "https://i.imgur.com/HYcn9xO.png" : "https://i.imgur.com/lOZ8h4l.png";
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      bubble.textContent = content;
+
+      msgDiv.appendChild(avatar);
+      msgDiv.appendChild(bubble);
+      chatBox.appendChild(msgDiv);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    async function summarize() {
+      const file = document.getElementById("pdfInput").files[0];
+      const text = document.getElementById("textInput").value.trim();
+
+      let summaryText = "";
+      document.getElementById("summaryOutput").textContent = "Processing...";
+
+      if (file) {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const res = await fetch("http://127.0.0.1:8000/summarize", {
+          method: "POST",
+          body: formData
+        });
+
+        const data = await res.json();
+        summaryText = data.summary;
+
+      } else if (text) {
+        const res = await fetch("http://127.0.0.1:8000/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: [
+              {
+                role: "system",
+                content: "You're a study assistant. First, summarize the content, then generate key questions to test understanding."
+              },
+              { role: "user", content: text }
+            ]
+          })
+        });
+
+        const data = await res.json();
+        summaryText = data.response;
+      } else {
+        alert("Upload a PDF or enter some text!");
+        return;
+      }
+
+      document.getElementById("summaryOutput").textContent = summaryText;
+
+      // Add to chat history
+      chatHistory = [
+        { role: "system", content: "You are a helpful study assistant." },
+        { role: "user", content: "Please help me understand the following:" },
+        { role: "assistant", content: summaryText }
+      ];
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById("userInput");
+      const userText = input.value.trim();
+      if (!userText) return;
+
+      showMessage(userText, "user");
+      input.value = "";
+
+      chatHistory.push({ role: "user", content: userText });
+
+      const res = await fetch("http://127.0.0.1:8000/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: chatHistory })
+      });
+
+      const data = await res.json();
+      const reply = data.response;
+
+      showMessage(reply, "assistant");
+      chatHistory.push({ role: "assistant", content: reply });
+    }
+  </script>
+</body>
+</html>
